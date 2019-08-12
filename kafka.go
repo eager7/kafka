@@ -69,8 +69,8 @@ func Initialize(broker []string, topic, group string, parts ...[2]int64) (*Kafka
 
 func newWriter(broker []string, topic string) *kafka.Writer {
 	return kafka.NewWriter(kafka.WriterConfig{
-		Brokers:      broker,
-		Topic:        topic,
+		Brokers: broker,
+		Topic:   topic,
 	})
 }
 
@@ -78,7 +78,7 @@ func newReader(broker []string, topic, group string, part, offset int64) (*kafka
 	cfg := kafka.ReaderConfig{
 		Brokers:        broker,
 		Topic:          topic,
-		CommitInterval: time.Second, //不在每次取数据后commit游标，而是定期commit游标，可以提升性能
+		CommitInterval: time.Second, //不在每次取数据后commit游标，而是定期commit游标，可以提升性能，按分组消费时自动维护游标
 	}
 	if part >= 0 {
 		cfg.Partition = int(part)
@@ -95,7 +95,19 @@ func newReader(broker []string, topic, group string, part, offset int64) (*kafka
 	return reader, nil
 }
 
-func (k *Kafka) Routine(ctx context.Context, wg *sync.WaitGroup, handler Handler) {
+/*
+** 启动kafka消费者，worker是消费者数量，当按照主题消费时最好和分区数量一致，按照分区消费时设置为1即可
+**/
+func (k *Kafka) Start(ctx context.Context, wg *sync.WaitGroup, handler Handler, worker int) {
+	for i := 0; i < worker; i++ {
+		go k.routine(ctx, wg, handler)
+	}
+}
+
+/*
+** kafka消费者，同一个消费者组的消费者可以消费同一个topic的不同分区的数据，但是不会组内多个消费者消费同一分区的数据，最好将分区和消费者数量设置为相同大小
+**/
+func (k *Kafka) routine(ctx context.Context, wg *sync.WaitGroup, handler Handler) {
 	for part, reader := range k.readers { //每个reader启动一个线程处理，如果是按照分区启动，那么每个分区都会启动相应线程数
 		wg.Add(1)
 		logger.Debug("start reader part:", part, " offset:", reader.Offset())
@@ -127,6 +139,9 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 	}
 }
 
+/*
+** 往kafka里写入数据，key是用来分区使用的，当使用同一个key，kafka会根据哈希算法放到同一个分区，如果不设置key，kafka自动分区
+**/
 func (k *Kafka) SendMessage(ctx context.Context, key, value []byte) error {
 	if err := k.writer.WriteMessages(ctx, kafka.Message{Key: key, Value: value}); err != nil {
 		return errors.New("kafka write message error:" + err.Error())

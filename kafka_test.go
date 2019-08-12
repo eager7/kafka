@@ -26,7 +26,7 @@ func TestGroup(t *testing.T) {
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
 
-	go k.Routine(ctx, wg, nil)
+	k.Start(ctx, wg, nil, 1)
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	<-interrupt
@@ -43,7 +43,7 @@ func TestParts(t *testing.T) {
 
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
-	go k.Routine(ctx, wg, nil)
+	k.Start(ctx, wg, nil, 6)
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
