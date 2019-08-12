@@ -14,13 +14,14 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/eager7/elog"
 	"github.com/segmentio/kafka-go"
 	"sync"
 	"time"
 )
 
-var logger = elog.NewLogger("kafka", elog.DebugLevel)
+var logger = elog.NewLogger("kafka", elog.NoticeLevel)
 
 type Handler func(topic string, partition int, offset, lag int64, key, value []byte)
 type Kafka struct {
@@ -126,7 +127,8 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 				_ = reader.Close()
 				return
 			}
-			logger.Debug("kafka message:", m.Topic, m.Partition, m.Offset, reader.Lag())
+			logger.Debug(fmt.Sprintf("kafka topic[%s], partition[%d], offset[%d], lag[%d]", m.Topic, m.Partition, m.Offset, reader.Lag()))
+			logger.Notice(string(m.Key), string(m.Value))
 			if handler != nil {
 				handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value)
 			}
