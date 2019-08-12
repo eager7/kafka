@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-var logger = elog.NewLogger("kafka", elog.NoticeLevel)
+var logger = elog.NewLogger("kafka", elog.DebugLevel)
 
 type Handler func(topic string, partition int, offset, lag int64, key, value []byte)
 type Kafka struct {
