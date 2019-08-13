@@ -37,7 +37,7 @@ type Kafka struct {
 ** group以及parts只能选择其中之一进行指定，指定group时kafka自动维护offset，指定part时，offset默认从0开始，此时需要手动指定offset，开始接收后就会自动增长了
 ** parts参数示例为{part,offset}，如parts := [][2]int64{{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}}
  */
-func Initialize(broker []string, topic, group string, parts ...[2]int64) (*Kafka, error) {
+func Initialize(broker []string, topic, group string, async bool, parts ...[2]int64) (*Kafka, error) {
 	k := &Kafka{
 		broker:  broker,
 		group:   group,
@@ -64,16 +64,24 @@ func Initialize(broker []string, topic, group string, parts ...[2]int64) (*Kafka
 			k.readers[-1] = r
 		}
 	}
-	k.writer = newWriter(broker, topic)
+	k.writer = newWriter(broker, topic, async)
 	return k, nil
 }
 
-func newWriter(broker []string, topic string) *kafka.Writer {
-	return kafka.NewWriter(kafka.WriterConfig{
-		Brokers:           broker,
-		Topic:             topic,
-		Async:             true,
-	})
+func newWriter(broker []string, topic string, async bool) *kafka.Writer {
+	if async {
+		return kafka.NewWriter(kafka.WriterConfig{
+			Brokers: broker,
+			Topic:   topic,
+			Async:   true,
+		})
+	} else {
+		return kafka.NewWriter(kafka.WriterConfig{
+			Brokers:      broker,
+			Topic:        topic,
+			BatchTimeout: time.Microsecond * 10,
+		})
+	}
 }
 
 func newReader(broker []string, topic, group string, part, offset int64) (*kafka.Reader, error) {
