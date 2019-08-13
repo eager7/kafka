@@ -64,6 +64,6 @@ func TestWrite(t *testing.T) {
 		if err := k.SendMessage(context.Background(), []byte("ETH"), []byte(fmt.Sprintf("hi test message:%d", i))); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Println("end:", time.Since(start))
+		fmt.Println("end:", i, time.Since(start))
 	}
 }
