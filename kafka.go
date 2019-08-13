@@ -70,10 +70,9 @@ func Initialize(broker []string, topic, group string, parts ...[2]int64) (*Kafka
 
 func newWriter(broker []string, topic string) *kafka.Writer {
 	return kafka.NewWriter(kafka.WriterConfig{
-		Brokers:      broker,
-		Topic:        topic,
-		BatchTimeout: 10 * time.Millisecond,
-		BatchSize:    5,
+		Brokers:           broker,
+		Topic:             topic,
+		Async:             true,
 	})
 }
 
