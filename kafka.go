@@ -137,6 +137,7 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 					_ = reader.Close()
 					return
 				}
+				continue
 			}
 			logger.Notice(fmt.Sprintf("kafka topic[%s], partition[%d], offset[%d], lag[%d]", m.Topic, m.Partition, m.Offset, reader.Lag()))
 			logger.Notice(string(m.Key), string(m.Value))
