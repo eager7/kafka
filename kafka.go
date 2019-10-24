@@ -23,7 +23,7 @@ import (
 
 var logger = elog.NewLogger("kafka", elog.DebugLevel)
 
-type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error)
+type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error) (restart bool)
 type Kafka struct {
 	broker  []string                //kafka主机地址
 	group   string                  //消费者组
@@ -132,15 +132,16 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 			m, err := reader.ReadMessage(ctx)
 			if err != nil {
 				logger.Error("kafka read message err:", err)
-				handler("", 0, 0, 0, nil, nil, err)
-				wg.Done()
-				_ = reader.Close()
-				return
+				if handler("", 0, 0, 0, nil, nil, err) {
+					wg.Done()
+					_ = reader.Close()
+					return
+				}
 			}
 			logger.Notice(fmt.Sprintf("kafka topic[%s], partition[%d], offset[%d], lag[%d]", m.Topic, m.Partition, m.Offset, reader.Lag()))
 			logger.Notice(string(m.Key), string(m.Value))
 			if handler != nil {
-				handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value, err)
+				_ = handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value, nil)
 			}
 		case <-ctx.Done():
 			logger.Warn("quit kafka routine")
