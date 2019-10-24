@@ -23,7 +23,7 @@ import (
 
 var logger = elog.NewLogger("kafka", elog.DebugLevel)
 
-type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error) (restart bool)
+type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error) (quit bool)
 type Kafka struct {
 	broker  []string                //kafka主机地址
 	group   string                  //消费者组
