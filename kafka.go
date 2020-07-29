@@ -23,12 +23,17 @@ import (
 
 var logger = elog.NewLogger("kafka", elog.DebugLevel)
 
-type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error) (quit bool)
+/*
+** 处理回调，当发生错误时会传入错误信息err，应用层处理err并通过返回err来告知此读取协程是否需要退出(nil不退出，否则退出)，
+** 当应用层在接收正常消息处理失败时也通过返回err来告知消息是否被消费完，返回nil表示消费完成，继续下一条消息
+ */
+type Handler func(topic string, partition int, offset, lag int64, key, value []byte, err error) (eResp error)
 type Kafka struct {
 	broker  []string                //kafka主机地址
 	group   string                  //消费者组
 	topic   string                  //消费主题
 	writer  *kafka.Writer           //写数据接口
+	Manual  bool                    //是否手动维护游标
 	readers map[int64]*kafka.Reader //读数据接口
 }
 
@@ -37,19 +42,20 @@ type Kafka struct {
 ** group以及parts只能选择其中之一进行指定，指定group时kafka自动维护offset，指定part时，offset默认从0开始，此时需要手动指定offset，开始接收后就会自动增长了
 ** parts参数示例为{part,offset}，如parts := [][2]int64{{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}}
  */
-func Initialize(broker []string, topic, group string, async bool, parts ...[2]int64) (*Kafka, error) {
+func Initialize(broker []string, topic, group string, async, manual bool, parts ...[2]int64) (*Kafka, error) {
 	k := &Kafka{
 		broker:  broker,
 		group:   group,
 		topic:   topic,
 		readers: make(map[int64]*kafka.Reader),
+		Manual:  manual,
 	}
 	if group != "" || len(parts) != 0 { //需要初始化读客户端
 		//分区和分组只能设定一个
 		if len(parts) > 0 {
 			logger.Info("initialize kafka with parts:", parts)
 			for _, p := range parts {
-				if r, err := newReader(broker, topic, group, p[0], p[1]); err != nil {
+				if r, err := newReader(broker, topic, group, p[0], p[1], manual); err != nil {
 					return nil, errors.New("kafka init err:" + err.Error())
 				} else {
 					k.readers[p[0]] = r
@@ -57,7 +63,7 @@ func Initialize(broker []string, topic, group string, async bool, parts ...[2]in
 			}
 		} else {
 			logger.Info("initialize kafka with group:", group)
-			r, err := newReader(broker, topic, group, -1, -1)
+			r, err := newReader(broker, topic, group, -1, -1, manual)
 			if err != nil {
 				return nil, errors.New("kafka init err:" + err.Error())
 			}
@@ -84,11 +90,13 @@ func newWriter(broker []string, topic string, async bool) *kafka.Writer {
 	}
 }
 
-func newReader(broker []string, topic, group string, part, offset int64) (*kafka.Reader, error) {
+func newReader(broker []string, topic, group string, part, offset int64, manual bool) (*kafka.Reader, error) {
 	cfg := kafka.ReaderConfig{
-		Brokers:        broker,
-		Topic:          topic,
-		CommitInterval: time.Second, //不在每次取数据后commit游标，而是定期commit游标，可以提升性能，按分组消费时自动维护游标
+		Brokers: broker,
+		Topic:   topic,
+	}
+	if !manual {
+		cfg.CommitInterval = time.Second //不在每次取数据后commit游标，而是定期commit游标，可以提升性能，按分组消费时自动维护游标
 	}
 	if part >= 0 {
 		cfg.Partition = int(part)
@@ -121,28 +129,44 @@ func (k *Kafka) routine(ctx context.Context, wg *sync.WaitGroup, handler Handler
 	for part, reader := range k.readers { //每个reader启动一个线程处理，如果是按照分区启动，那么每个分区都会启动相应线程数
 		wg.Add(1)
 		logger.Debug("start reader part:", part, " offset:", reader.Offset())
-		go readRoutine(ctx, wg, reader, handler)
+		go readRoutine(ctx, wg, reader, handler, k.Manual)
 	}
 }
 
-func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, handler Handler) {
+func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, handler Handler, manual bool) {
 	for {
 		select {
 		default:
-			m, err := reader.ReadMessage(ctx)
+			var err error
+			var m kafka.Message
+			if manual { //手动模式下只有应用层成功处理了消息才继续消费
+				m, err = reader.FetchMessage(ctx)
+			} else { //自动模式下由kafka维护offset
+				m, err = reader.ReadMessage(ctx)
+			}
 			if err != nil {
 				logger.Error("kafka read message err:", err)
-				if handler("", 0, 0, 0, nil, nil, err) {
-					wg.Done()
-					_ = reader.Close()
-					return
+				//返回错误表示应用层想要关闭此读取协程
+				if handler != nil {
+					if eResp := handler("", 0, 0, 0, nil, nil, err); eResp != nil {
+						wg.Done()
+						_ = reader.Close()
+						return
+					}
 				}
 				continue
 			}
 			logger.Notice(fmt.Sprintf("kafka topic[%s], partition[%d], offset[%d], lag[%d]", m.Topic, m.Partition, m.Offset, reader.Lag()))
 			logger.Notice(string(m.Key), string(m.Value))
 			if handler != nil {
-				_ = handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value, nil)
+				//返回nil表示可以继续消费下一条，否则手动维护offset的模式下继续消费同一条
+				if eResp := handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value, nil); eResp == nil {
+					if manual { //手动提交偏移量
+						if err := reader.CommitMessages(ctx, m); err != nil {
+							logger.Error("commit message failed:", err)
+						}
+					}
+				}
 			}
 		case <-ctx.Done():
 			logger.Warn("quit kafka routine")

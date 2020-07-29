@@ -19,7 +19,7 @@ const (
 )
 
 func TestGroup(t *testing.T) {
-	k, err := Initialize(strings.Split(broker, ","), topic, group, false)
+	k, err := Initialize(strings.Split(broker, ","), topic, group, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestGroup(t *testing.T) {
 
 func TestParts(t *testing.T) {
 	parts := [][2]int64{{0, 0}}
-	k, err := Initialize(strings.Split(broker, ","), topic, "", false, parts...)
+	k, err := Initialize(strings.Split(broker, ","), topic, "", false, false, parts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestParts(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
-	k, err := Initialize(strings.Split(broker, ","), topic, group, true)
+	k, err := Initialize(strings.Split(broker, ","), topic, group, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
