@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-var logger = elog.NewLogger("kafka", elog.DebugLevel)
+var logger = elog.NewLogger("kafka", elog.NoticeLevel)
 
 /*
 ** 处理回调，当发生错误时会传入错误信息err，应用层处理err并通过返回err来告知此读取协程是否需要退出(nil不退出，否则退出)，
@@ -41,6 +41,7 @@ type Kafka struct {
 ** 初始化时必须要指定broker和topic
 ** group以及parts只能选择其中之一进行指定，指定group时kafka自动维护offset，指定part时，offset默认从0开始，此时需要手动指定offset，开始接收后就会自动增长了
 ** parts参数示例为{part,offset}，如parts := [][2]int64{{0, 1}, {1, 1}, {2, 1}, {3, 1}, {4, 1}, {5, 1}}
+** async定义写入时是同步写入还是异步写入，true为异步写入，忽略写入返回值，false为同步写入，等待写入返回，效率较低
  */
 func Initialize(broker []string, topic, group string, async, manual bool, parts ...[2]int64) (*Kafka, error) {
 	k := &Kafka{
@@ -140,7 +141,7 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 			var err error
 			var m kafka.Message
 			if manual { //手动模式下只有应用层成功处理了消息才继续消费
-				m, err = reader.FetchMessage(ctx)
+				m, err = reader.FetchMessage(ctx)//测试发现，此模式下，kafka的current-offset没有增加，但是也不会重复消费，除非再次启动程序才会重新消费，和预期不符
 			} else { //自动模式下由kafka维护offset
 				m, err = reader.ReadMessage(ctx)
 			}
@@ -156,8 +157,7 @@ func readRoutine(ctx context.Context, wg *sync.WaitGroup, reader *kafka.Reader, 
 				}
 				continue
 			}
-			logger.Notice(fmt.Sprintf("kafka topic[%s], partition[%d], offset[%d], lag[%d]", m.Topic, m.Partition, m.Offset, reader.Lag()))
-			logger.Notice(string(m.Key), string(m.Value))
+			fmt.Printf("kafka topic[%s], partition[%d], offset[%d], lag[%d], manual:[%v]-->key:%s,value:%s\n", m.Topic, m.Partition, m.Offset, reader.Lag(), manual, string(m.Key), string(m.Value))
 			if handler != nil {
 				//返回nil表示可以继续消费下一条，否则手动维护offset的模式下继续消费同一条
 				if eResp := handler(m.Topic, m.Partition, m.Offset, reader.Lag(), m.Key, m.Value, nil); eResp == nil {

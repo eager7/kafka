@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	broker = "localhost:9092"
-	topic  = "test"
-	group  = "test_group"
+	broker = "120.25.224.24:9092"
+	topic  = "plainchant"
+	group  = "g1"
 )
 
 func TestGroup(t *testing.T) {
@@ -54,16 +54,17 @@ func TestParts(t *testing.T) {
 }
 
 func TestWrite(t *testing.T) {
-	k, err := Initialize(strings.Split(broker, ","), topic, group, true, false)
+	k, err := Initialize(strings.Split(broker, ","), topic, group, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10; i++ {
 		start := time.Now()
-		if err := k.SendMessage(context.Background(), []byte("ETH"), []byte(fmt.Sprintf("hi test message:%d", i))); err != nil {
+		if err := k.SendMessage(context.Background(), []byte("key"), []byte(fmt.Sprintf("test message:%d", i))); err != nil {
 			t.Fatal(err)
 		}
 		fmt.Println("end:", i, time.Since(start))
 	}
+	time.Sleep(time.Second)
 }
