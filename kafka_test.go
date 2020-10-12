@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	broker = "120.25.224.24:9092"
-	topic  = "plainchant"
+	broker = ""
+	topic  = "topic_approve"
 	group  = "g1"
 )
 
@@ -27,12 +27,21 @@ func TestGroup(t *testing.T) {
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
 
-	k.Start(ctx, wg, nil, 1)
+	k.Start(ctx, wg, ApproveHandle, 1)
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	<-interrupt
 	fmt.Println("stop kafka test")
 	wg.Wait()
+}
+
+func ApproveHandle(topic string, partition int, offset, lag int64, key, value []byte, err error) (eResp error) {
+	if err != nil {
+		logger.Error("ReceivePushMessage err:", topic, "partition:", partition, "offset:", offset, "lag:", lag, "key:", key, "value:", string(value), err)
+		return nil //不退出接收协程
+	}
+	logger.Debug("receive approve, topic:", topic, "partition:", partition, "offset:", offset, "lag:", lag, "key:", key, "value:", string(value))
+	return nil //提交偏移量，消费下一条消息
 }
 
 func TestParts(t *testing.T) {
